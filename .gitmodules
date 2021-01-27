@@ -1,3 +1,6 @@
 [submodule "mirai-cpp"]
 	path = mirai-cpp
 	url = https://github.com/cyanray/mirai-cpp.git
+[submodule "lgtbot"]
+	path = lgtbot
+	url = https://github.com/Slontia/lgtbot

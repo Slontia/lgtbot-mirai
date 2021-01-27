@@ -8,80 +8,113 @@
 #include <map>
 #include <mirai.h>
 #include "myheader.h"
+#include <gflags/gflags.h>
+#include "lgtbot/BotCore/bot_core.h"
+#include "lgtbot/Utility/msg_sender.h"
 
-int main()
+DEFINE_string(ip, "127.0.0.1", "The IP address");
+DEFINE_int32(port, 8080, "The port");
+DEFINE_string(auth, "", "The AuthKey for mirai-api-http");
+DEFINE_int32(thread, 4, "The number of threads");
+DEFINE_uint64(qq, 0, "Bot's QQ ID");
+
+static Cyan::MiraiBot* g_bot_p = nullptr;
+
+class MyMsgSender : public MsgSender
 {
-	using namespace std;
-	using namespace Cyan;
+ public:
+  MyMsgSender(const Target target, const uint64_t id) : target_(target), id_(id) {}
+  virtual ~MyMsgSender() override
+  {
+    if (target_ == TO_USER)
+    {
+      g_bot_p->SendMessage(Cyan::QQ_t(id_), msg_);
+    }
+    else if (target_ == TO_GROUP)
+    {
+      g_bot_p->SendMessage(Cyan::GID_t(id_), msg_);
+    }
+  }
+  virtual void SendString(const char* const str, const size_t len) override { msg_.Plain(std::string_view(str, len)); }
+  virtual void SendAt(const uint64_t uid) override
+  {
+    if (target_ == TO_USER)
+    {
+      msg_.Plain(std::to_string(uid));
+    }
+    else if (target_ == TO_GROUP)
+    {
+      msg_.At(Cyan::QQ_t(uid));
+    }
+  }
 
+ private:
+  const Target target_;
+  const UserID id_;
+  Cyan::MessageChain msg_;
+};
+
+MsgSender* new_msg_sender(const Target target, const uint64_t id) { return new MyMsgSender(target, id); }
+void delete_msg_sender(MsgSender* msg_sender) { delete msg_sender; }
+
+int main(int argc, char** argv)
+{
 #if defined(WIN32) || defined(_WIN32)
 	// 切换代码页，让 CMD 可以显示 UTF-8 字符
 	system("chcp 65001");
 #endif
-
-	MiraiBot bot("127.0.0.1", 8080);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, argc, argv);
+  std::cout << "[QQ] " << FLAGS_qq << std::endl;
+  std::cout << "[Address] " << FLAGS_ip << ":" << FLAGS_port << std::endl;
+  Cyan::MiraiBot bot(FLAGS_ip, FLAGS_port, FLAGS_thread);
+  g_bot_p = &bot;
 	while (true)
 	{
 		try
 		{
-			bot.Auth("mirai-api-http设置的AuthKey", 211000000_qq);
+			bot.Auth(FLAGS_auth, Cyan::QQ_t(FLAGS_qq));
 			break;
 		}
 		catch (const std::exception& ex)
 		{
-			cout << ex.what() << endl;
+      std::cout << ex.what() << std::endl;
 		}
-		MiraiBot::SleepSeconds(1);
+    Cyan::MiraiBot::SleepSeconds(1);
 	}
-	cout << "Bot Working..." << endl;
+  std::cout << "Bot Working..." << std::endl;
 
-	// 用map记录哪些群启用了“反撤回”功能
-	map<GID_t, bool> groups;
+  bot.On<Cyan::GroupMessage>([](Cyan::GroupMessage m)
+    {
+      try
+      {
+        if (m.AtMe()) { BOT_API::HandlePublicRequest(m.Sender.QQ, m.Sender.Group.GID, m.MessageChain.GetPlainText().c_str()); }
+      }
+			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
+    });
 
-	bot.On<GroupMessage>(
-		[&](GroupMessage m)
+  bot.On<Cyan::FriendMessage>([](Cyan::FriendMessage m)
+    {
+      try
+      {
+        BOT_API::HandlePrivateRequest(m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
+      }
+			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
+    });
+
+  bot.On<Cyan::TempMessage>([](Cyan::TempMessage m)
+    {
+      try
+      {
+        BOT_API::HandlePrivateRequest(m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
+      }
+			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
+    });
+
+	bot.EventLoop([](const char* err_msg)
 		{
-			try
-			{
-				string plain = m.MessageChain.GetPlainText();
-				if (plain == "/anti-recall enabled." || plain == "撤回没用")
-				{
-					groups[m.Sender.Group.GID] = true;
-					m.Reply(MessageChain().Plain("撤回也没用，我都看到了"));
-					return;
-				}
-				if (plain == "/anti-recall disabled." || plain == "撤回有用")
-				{
-					groups[m.Sender.Group.GID] = false;
-					m.Reply(MessageChain().Plain("撤回有用"));
-					return;
-				}
-			}
-			catch (const std::exception& ex)
-			{
-				cout << ex.what() << endl;
-			}
+      std::cout << "[bot错误] " << err_msg << std::endl;
 		});
-
-
-	bot.On<GroupRecallEvent>(
-		[&](GroupRecallEvent e)
-		{
-			try
-			{
-				if (!groups[e.Group.GID]) return;
-				auto recalled_mc = bot.GetGroupMessageFromId(e.MessageId).MessageChain;
-				auto mc = "刚刚有人撤回了: " + recalled_mc;
-				bot.SendMessage(e.Group.GID, mc);
-			}
-			catch (const std::exception& ex)
-			{
-				cout << ex.what() << endl;
-			}
-		});
-
-
-	bot.EventLoop();
 
 	return 0;
 }
