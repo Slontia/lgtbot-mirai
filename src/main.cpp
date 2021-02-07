@@ -9,16 +9,17 @@
 #include <mirai.h>
 #include "myheader.h"
 #include <gflags/gflags.h>
-#include "lgtbot/BotCore/bot_core.h"
-#include "lgtbot/Utility/msg_sender.h"
+#include "lgtbot/bot_core/bot_core.h"
+#include "lgtbot/utility/msg_sender.h"
 
 DEFINE_string(ip, "127.0.0.1", "The IP address");
 DEFINE_int32(port, 8080, "The port");
 DEFINE_string(auth, "", "The AuthKey for mirai-api-http");
 DEFINE_int32(thread, 4, "The number of threads");
 DEFINE_uint64(qq, 0, "Bot's QQ ID");
+DEFINE_string(game_path, "plugins", "The path of game modules");
 
-static Cyan::MiraiBot* g_bot_p = nullptr;
+static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
 class MyMsgSender : public MsgSender
 {
@@ -28,11 +29,11 @@ class MyMsgSender : public MsgSender
   {
     if (target_ == TO_USER)
     {
-      g_bot_p->SendMessage(Cyan::QQ_t(id_), msg_);
+      g_mirai_bot->SendMessage(Cyan::QQ_t(id_), msg_);
     }
     else if (target_ == TO_GROUP)
     {
-      g_bot_p->SendMessage(Cyan::GID_t(id_), msg_);
+      g_mirai_bot->SendMessage(Cyan::GID_t(id_), msg_);
     }
   }
   virtual void SendString(const char* const str, const size_t len) override { msg_.Plain(std::string_view(str, len)); }
@@ -64,11 +65,11 @@ int main(int argc, char** argv)
 	system("chcp 65001");
 #endif
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, argc, argv);
+  const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, FLAGS_game_path.c_str(), nullptr, 0), BOT_API::Release);
   std::cout << "[QQ] " << FLAGS_qq << std::endl;
   std::cout << "[Address] " << FLAGS_ip << ":" << FLAGS_port << std::endl;
   Cyan::MiraiBot bot(FLAGS_ip, FLAGS_port, FLAGS_thread);
-  g_bot_p = &bot;
+  g_mirai_bot = &bot;
 	while (true)
 	{
 		try
@@ -84,29 +85,29 @@ int main(int argc, char** argv)
 	}
   std::cout << "Bot Working..." << std::endl;
 
-  bot.On<Cyan::GroupMessage>([](Cyan::GroupMessage m)
+  bot.On<Cyan::GroupMessage>([&bot_core](Cyan::GroupMessage m)
     {
       try
       {
-        if (m.AtMe()) { BOT_API::HandlePublicRequest(m.Sender.QQ, m.Sender.Group.GID, m.MessageChain.GetPlainText().c_str()); }
+        if (m.AtMe()) { BOT_API::HandlePublicRequest(bot_core.get(), m.Sender.Group.GID, m.Sender.QQ, m.MessageChain.GetPlainText().c_str()); }
       }
 			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
     });
 
-  bot.On<Cyan::FriendMessage>([](Cyan::FriendMessage m)
+  bot.On<Cyan::FriendMessage>([&bot_core](Cyan::FriendMessage m)
     {
       try
       {
-        BOT_API::HandlePrivateRequest(m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
+        BOT_API::HandlePrivateRequest(bot_core.get(), m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
       }
 			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
     });
 
-  bot.On<Cyan::TempMessage>([](Cyan::TempMessage m)
+  bot.On<Cyan::TempMessage>([&bot_core](Cyan::TempMessage m)
     {
       try
       {
-        BOT_API::HandlePrivateRequest(m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
+        BOT_API::HandlePrivateRequest(bot_core.get(), m.Sender.QQ, m.MessageChain.GetPlainText().c_str());
       }
 			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
     });

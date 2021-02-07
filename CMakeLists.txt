@@ -22,7 +22,7 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 
 include_directories(include ./)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE mirai-cpp gflags game_core_static)
+target_link_libraries(${PROJECT_NAME} PRIVATE mirai-cpp gflags bot_core_static)
 target_compile_definitions(${PROJECT_NAME} PRIVATE MIRAICPP_STATICLIB)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
