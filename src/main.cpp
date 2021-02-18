@@ -18,6 +18,7 @@ DEFINE_string(auth, "", "The AuthKey for mirai-api-http");
 DEFINE_int32(thread, 4, "The number of threads");
 DEFINE_uint64(qq, 0, "Bot's QQ ID");
 DEFINE_string(game_path, "plugins", "The path of game modules");
+DEFINE_string(admins, "", "Administrator user id list");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
@@ -58,6 +59,20 @@ class MyMsgSender : public MsgSender
 MsgSender* new_msg_sender(const Target target, const uint64_t id) { return new MyMsgSender(target, id); }
 void delete_msg_sender(MsgSender* msg_sender) { delete msg_sender; }
 
+static const std::vector<UserID> LoadAdmins()
+{
+  if (FLAGS_admins.empty()) { return {}; }
+  std::vector<UserID> admins;
+  std::string::size_type begin = 0;
+  while (true)
+  {
+    admins.emplace_back(atoll(FLAGS_admins.c_str() + begin));
+    begin = FLAGS_admins.find_first_of(',', begin);
+    if (begin == std::string::npos || ++begin == FLAGS_admins.size()) { break; }
+  }
+  return admins;
+}
+
 int main(int argc, char** argv)
 {
 #if defined(WIN32) || defined(_WIN32)
@@ -65,7 +80,8 @@ int main(int argc, char** argv)
 	system("chcp 65001");
 #endif
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, FLAGS_game_path.c_str(), nullptr, 0), BOT_API::Release);
+  const auto admins = LoadAdmins();
+  const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, FLAGS_game_path.c_str(), admins.data(), admins.size()), BOT_API::Release);
   std::cout << "[QQ] " << FLAGS_qq << std::endl;
   std::cout << "[Address] " << FLAGS_ip << ":" << FLAGS_port << std::endl;
   Cyan::MiraiBot bot(FLAGS_ip, FLAGS_port, FLAGS_thread);
