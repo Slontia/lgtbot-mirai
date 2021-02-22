@@ -20,6 +20,11 @@ DEFINE_uint64(qq, 0, "Bot's QQ ID");
 DEFINE_string(game_path, "plugins", "The path of game modules");
 DEFINE_string(admins, "", "Administrator user id list");
 
+DEFINE_string(db_addr, "", "Address of database <ip>:<port>");
+DEFINE_string(db_user, "root", "User of database");
+DEFINE_string(db_name, "lgtbot", "Name of database");
+DEFINE_string(db_passwd, "", "Password of database");
+
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
 class MyMsgSender : public MsgSender
@@ -28,13 +33,20 @@ class MyMsgSender : public MsgSender
   MyMsgSender(const Target target, const uint64_t id) : target_(target), id_(id) {}
   virtual ~MyMsgSender() override
   {
-    if (target_ == TO_USER)
+    try
     {
-      g_mirai_bot->SendMessage(Cyan::QQ_t(id_), msg_);
+      if (target_ == TO_USER)
+      {
+        g_mirai_bot->SendMessage(Cyan::QQ_t(id_), msg_);
+      }
+      else if (target_ == TO_GROUP)
+      {
+        g_mirai_bot->SendMessage(Cyan::GID_t(id_), msg_);
+      }
     }
-    else if (target_ == TO_GROUP)
+    catch (std::exception& e)
     {
-      g_mirai_bot->SendMessage(Cyan::GID_t(id_), msg_);
+      std::cerr << "Sending message failed: target=" << target_ << " id=" << id_ << " info=" << e.what() << std::endl;
     }
   }
   virtual void SendString(const char* const str, const size_t len) override { msg_.Plain(std::string_view(str, len)); }
@@ -73,6 +85,33 @@ static const std::vector<UserID> LoadAdmins()
   return admins;
 }
 
+static void ConnectDatabase(void* const bot)
+{
+  if (!FLAGS_db_addr.empty())
+  {
+    const char* errmsg = nullptr;
+    if (FLAGS_db_passwd.empty())
+    {
+      char passwd[128] = {0};
+      std::cout << "Password: ";
+      std::cin >> passwd;
+      BOT_API::ConnectDatabase(bot, FLAGS_db_addr.c_str(), FLAGS_db_user.c_str(), passwd, FLAGS_db_name.c_str(), &errmsg);
+    }
+    else
+    {
+      BOT_API::ConnectDatabase(bot, FLAGS_db_addr.c_str(), FLAGS_db_user.c_str(), FLAGS_db_passwd.c_str(), FLAGS_db_name.c_str(), &errmsg);
+    }
+    if (errmsg)
+    {
+      std::cerr << "Connect database failed errmsg:" << *errmsg << std::endl;
+    }
+    else
+    {
+      std::cout << "Connect database success" << std::endl;
+    }
+  }
+}
+
 int main(int argc, char** argv)
 {
 #if defined(WIN32) || defined(_WIN32)
@@ -81,7 +120,15 @@ int main(int argc, char** argv)
 #endif
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   const auto admins = LoadAdmins();
-  const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, FLAGS_game_path.c_str(), admins.data(), admins.size()), BOT_API::Release);
+  const std::unique_ptr<void, void(*)(void*)> bot_core(
+      BOT_API::Init(FLAGS_qq, new_msg_sender, delete_msg_sender, FLAGS_game_path.c_str(), admins.data(), admins.size()),
+      BOT_API::Release);
+  if (!bot_core)
+  {
+    std::cerr << "Init bot core failed" << std::endl;
+    return -1;
+  }
+  ConnectDatabase(bot_core.get());
   std::cout << "[QQ] " << FLAGS_qq << std::endl;
   std::cout << "[Address] " << FLAGS_ip << ":" << FLAGS_port << std::endl;
   Cyan::MiraiBot bot(FLAGS_ip, FLAGS_port, FLAGS_thread);
