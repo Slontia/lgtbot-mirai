@@ -54,7 +54,11 @@ class MyMsgSender : public MsgSender
   {
     if (target_ == TO_USER)
     {
-      msg_.Plain(std::to_string(uid));
+      if (uid == id_) {
+        msg_.Plain("<你>");
+      } else {
+        msg_.Plain("<" + std::to_string(uid) + ">");
+      }
     }
     else if (target_ == TO_GROUP)
     {
@@ -64,7 +68,7 @@ class MyMsgSender : public MsgSender
 
  private:
   const Target target_;
-  const UserID id_;
+  const uint64_t id_;
   Cyan::MessageChain msg_;
 };
 
@@ -174,6 +178,11 @@ int main(int argc, char** argv)
       }
 			catch (const std::exception& ex) { std::cout << ex.what() << std::endl; }
     });
+
+	bot.OnEventReceived<Cyan::NewFriendRequestEvent>([&](Cyan::NewFriendRequestEvent newFriend)
+		{
+			newFriend.Accept();
+		});
 
 	bot.EventLoop([](const char* err_msg)
 		{
