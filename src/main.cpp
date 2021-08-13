@@ -187,7 +187,7 @@ int main(int argc, char** argv)
             bot.Connect(opts);
             break;
         } catch (const std::exception& ex) {
-            std::cerr << "connect bot failed errmsg:" << ex.what() << std::endl;
+            std::cerr << "Connect bot failed errmsg:" << ex.what() << std::endl;
         }
         Cyan::MiraiBot::SleepSeconds(1);
     }
