@@ -11,6 +11,7 @@ DEFINE_string(auth, "", "The AuthKey for mirai-api-http");
 DEFINE_int32(thread, 4, "The number of threads");
 DEFINE_uint64(qq, 0, "Bot's QQ ID");
 DEFINE_string(game_path, "plugins", "The path of game modules");
+DEFINE_string(image_path, "images", "The path of images cache");
 DEFINE_string(admins, "", "Administrator user id list");
 
 DEFINE_string(db_addr, "", "Address of database <ip>:<port>");
@@ -93,6 +94,18 @@ void MessagerPostUser(void* p, uint64_t uid, bool is_at)
     }
 }
 
+void MessagerPostImage(void* p, const char* path)
+{
+    Messager* const messager = static_cast<Messager*>(p);
+    if (messager->is_uid_) {
+        auto img = g_mirai_bot->UploadFriendImage(path);
+        messager->msg_.Image(img);
+    } else {
+        auto img = g_mirai_bot->UploadGroupImage(path);
+        messager->msg_.Image(img);
+    }
+}
+
 void MessagerFlush(void* p)
 {
     Messager* const messager = static_cast<Messager*>(p);
@@ -129,6 +142,7 @@ static const std::vector<uint64_t> LoadAdmins()
             break;
         }
     }
+    admins.emplace_back(0);
     return admins;
 }
 
@@ -162,9 +176,13 @@ int main(int argc, char** argv)
 #endif
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     const auto admins = LoadAdmins();
-    const std::unique_ptr<void, void(*)(void*)> bot_core(
-            BOT_API::Init(FLAGS_qq, FLAGS_game_path.c_str(), admins.data(), admins.size()),
-            BOT_API::Release);
+    const BotOption option {
+        .this_uid_ = FLAGS_qq,
+        .game_path_ = FLAGS_game_path.c_str(),
+        .image_path_ = FLAGS_image_path.c_str(),
+        .admins_ = admins.data(),
+    };
+    const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
     if (!bot_core) {
         std::cerr << "Init bot core failed" << std::endl;
         return -1;
@@ -205,19 +223,24 @@ int main(int argc, char** argv)
             }
         });
 
-    bot.On<Cyan::FriendMessage>([&bot_core](Cyan::FriendMessage m)
+    const auto handle_private_message = [&bot_core](auto m)
         {
             try {
                 BOT_API::HandlePrivateRequest(bot_core.get(), m.Sender.QQ.ToInt64(), m.MessageChain.GetPlainText().c_str());
             } catch (const std::exception& ex) {
                 std::cout << ex.what() << std::endl;
             }
-        });
+        };
+
+    bot.On<Cyan::FriendMessage>(handle_private_message);
+    bot.On<Cyan::StrangerMessage>(handle_private_message);
 
     bot.On<Cyan::TempMessage>([&bot_core](Cyan::TempMessage m)
         {
             try {
-                m.Reply("[错误] 请先添加我为好友吧，这样我们就能一起玩耍啦~" + m.MessageChain);
+                auto msg = Cyan::MessageChain();
+                msg.Plain("[错误] 请先添加我为好友吧，这样我们就能一起玩耍啦~");
+                m.Reply(msg);
             } catch (const std::exception& ex) {
                 std::cout << ex.what() << std::endl;
             }
