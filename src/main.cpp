@@ -13,11 +13,7 @@ DEFINE_uint64(qq, 0, "Bot's QQ ID");
 DEFINE_string(game_path, "plugins", "The path of game modules");
 DEFINE_string(image_path, "images", "The path of images cache");
 DEFINE_string(admins, "", "Administrator user id list");
-
-DEFINE_string(db_addr, "", "Address of database <ip>:<port>");
-DEFINE_string(db_user, "root", "User of database");
-DEFINE_string(db_name, "lgtbot", "Name of database");
-DEFINE_string(db_passwd, "", "Password of database");
+DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
@@ -40,56 +36,64 @@ void MessagerPostText(void* p, const char* data, uint64_t len)
     messager->msg_.Plain(std::string_view(data, len));
 }
 
+std::string user_id_str(const uint64_t uid)
+{
+    return "<" + std::to_string(uid) + ">";
+};
+
+std::string user_name_str(const uint64_t uid)
+{
+    try {
+        for (const auto& f : g_mirai_bot->GetFriendList()) {
+            if (uid == f.QQ.ToInt64()) {
+                return "<" + f.NickName + "(" + std::to_string(uid) + ")>";
+            }
+        }
+        // If the user is not friend, we will not find his name.
+    } catch (std::exception& e) {
+        std::cerr << "UserName failed: uid=" << uid << " info=" << e.what() << std::endl;
+    }
+    return user_id_str(uid);
+};
+
+std::string member_name_str(const uint64_t uid, const uint64_t gid)
+{
+    try {
+        return "<" + g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(gid), Cyan::QQ_t(uid)).MemberName
+                   + "(" + std::to_string(uid) + ")>";
+    } catch (std::exception& e) {
+        std::cerr << "GroupUserName failed: uid=" << uid << " gid=" << gid << " info=" << e.what() << std::endl;
+    }
+    return user_name_str(uid);
+};
+
+const char* GetUserName(const uint64_t uid, const uint64_t* const group_id)
+{
+    thread_local static std::string str;
+    if (group_id != nullptr) {
+        str = member_name_str(uid, *group_id);
+    } else {
+        str = user_name_str(uid);
+    }
+    return str.c_str();
+}
+
 void MessagerPostUser(void* p, uint64_t uid, bool is_at)
 {
     Messager* const messager = static_cast<Messager*>(p);
-
-    const auto post_user_id = [&](const uint64_t uid)
-    {
-        messager->msg_.Plain("<" + std::to_string(uid) + ">");
-    };
-
-    const auto try_post_name = [&](const uint64_t uid)
-    {
-        try {
-            for (const auto& f : g_mirai_bot->GetFriendList()) {
-                if (uid == f.QQ.ToInt64()) {
-                    messager->msg_.Plain("<" + f.NickName + "(" + std::to_string(uid) + ")>");
-                    return;
-                }
-            }
-            // If the user is not friend, we will not find his name.
-        } catch (std::exception& e) {
-            std::cerr << "UserName failed: uid=" << uid << " info=" << e.what() << std::endl;
-        }
-        post_user_id(uid);
-    };
-
-    const auto try_post_member_name = [&](const uint64_t uid, const uint64_t gid)
-    {
-        try {
-            messager->msg_.Plain("<" + g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(gid), Cyan::QQ_t(uid)).MemberName
-                           + "(" + std::to_string(uid) + ")>");
-            return;
-        } catch (std::exception& e) {
-            std::cerr << "GroupUserName failed: uid=" << uid << " gid=" << gid << " info=" << e.what() << std::endl;
-        }
-        try_post_name(uid);
-    };
-
     if (is_at) {
         if (!messager->is_uid_) {
             messager->msg_.At(Cyan::QQ_t(uid));
         } else if (uid == messager->id_) {
             messager->msg_.Plain("<你>");
         } else {
-            try_post_name(uid);
+            messager->msg_.Plain(user_name_str(uid));
         }
     } else {
         if (!messager->is_uid_) {
-            try_post_member_name(uid, messager->id_);
+            messager->msg_.Plain(member_name_str(uid, messager->id_));
         } else {
-            try_post_name(uid);
+            messager->msg_.Plain(user_name_str(uid));
         }
     }
 }
@@ -146,28 +150,6 @@ static const std::vector<uint64_t> LoadAdmins()
     return admins;
 }
 
-static void ConnectDatabase(void* const bot)
-{
-#ifdef WITH_MYSQL
-    if (!FLAGS_db_addr.empty()) {
-        const char* errmsg = nullptr;
-        if (FLAGS_db_passwd.empty()) {
-            char passwd[128] = {0};
-            std::cout << "Password: ";
-            std::cin >> passwd;
-            BOT_API::ConnectDatabase(bot, FLAGS_db_addr.c_str(), FLAGS_db_user.c_str(), passwd, FLAGS_db_name.c_str(), &errmsg);
-        } else {
-            BOT_API::ConnectDatabase(bot, FLAGS_db_addr.c_str(), FLAGS_db_user.c_str(), FLAGS_db_passwd.c_str(), FLAGS_db_name.c_str(), &errmsg);
-        }
-        if (errmsg) {
-            std::cerr << "Connect database failed errmsg:" << *errmsg << std::endl;
-        } else {
-            std::cout << "Connect database success" << std::endl;
-        }
-    }
-#endif
-}
-
 int main(int argc, char** argv)
 {
 #if defined(WIN32) || defined(_WIN32)
@@ -181,13 +163,13 @@ int main(int argc, char** argv)
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = admins.data(),
+        .db_path_ = FLAGS_db_path.c_str()
     };
     const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
     if (!bot_core) {
         std::cerr << "Init bot core failed" << std::endl;
         return -1;
     }
-    ConnectDatabase(bot_core.get());
 
     Cyan::MiraiBot bot;
     Cyan::SessionOptions opts;
