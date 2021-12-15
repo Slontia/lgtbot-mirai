@@ -1,8 +1,18 @@
+<div align="center">
+
+![Logo](https://github.com/Slontia/lgtbot/blob/master/logo.svg)
+
+![image](https://img.shields.io/badge/author-slontia-blue.svg) ![image](https://img.shields.io/badge/language-c++20-green.svg)
+
+</div>
+
 # lgtbot-mirai
 
 基于 Mirai 框架的 LGTBot 游戏裁判机器人。
 
-LGTBot 相关内容，请访问 [LGTBot 主页](http://github/slontia/lgtbot)
+LGTBot 相关内容，请访问 [LGTBot 主页](http://github/Slontia/lgtbot)
+
+关于项目的构建，请参考 [LGTBot 开始](https://github.com/Slontia/lgtbot#2-%E5%BC%80%E5%A7%8B)
 
 ## 使用说明
 
