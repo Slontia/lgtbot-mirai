@@ -98,14 +98,15 @@ void MessagerPostUser(void* p, uint64_t uid, bool is_at)
     }
 }
 
-void MessagerPostImage(void* p, const char* path)
+void MessagerPostImage(void* p, const std::filesystem::path::value_type* path)
 {
     Messager* const messager = static_cast<Messager*>(p);
+    std::basic_string<std::filesystem::path::value_type> path_str(path);
     if (messager->is_uid_) {
-        auto img = g_mirai_bot->UploadFriendImage(path);
+        auto img = g_mirai_bot->UploadFriendImage(std::string(path_str.begin(), path_str.end()));
         messager->msg_.Image(img);
     } else {
-        auto img = g_mirai_bot->UploadGroupImage(path);
+        auto img = g_mirai_bot->UploadGroupImage(std::string(path_str.begin(), path_str.end()));
         messager->msg_.Image(img);
     }
 }
@@ -163,7 +164,7 @@ int main(int argc, char** argv)
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = admins.data(),
-        .db_path_ = FLAGS_db_path.c_str()
+        .db_path_ = std::filesystem::path(FLAGS_db_path).c_str(),
     };
     const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
     if (!bot_core) {
