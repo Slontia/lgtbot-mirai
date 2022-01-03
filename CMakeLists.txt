@@ -23,6 +23,7 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 include_directories(include ${CMAKE_CURRENT_SOURCE_DIR}/lgtbot)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE mirai-cpp gflags bot_core_static)
+add_dependencies(${PROJECT_NAME} mirai-cpp bot_core_static)
 target_compile_definitions(${PROJECT_NAME} PRIVATE MIRAICPP_STATICLIB)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
