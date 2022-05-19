@@ -3,4 +3,5 @@
 	url = git@github.com:cyanray/mirai-cpp.git
 [submodule "lgtbot"]
 	path = lgtbot
-	url = git@github.com:Slontia/lgtbot
+	url = git@github.com:Slontia/lgtbot.git
+    branch = master

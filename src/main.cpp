@@ -14,6 +14,7 @@ DEFINE_string(game_path, "plugins", "The path of game modules");
 DEFINE_string(image_path, "images", "The path of images cache");
 DEFINE_string(admins, "", "Administrator user id list");
 DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
+DEFINE_bool(allow_temp, true, "Allow temp message");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
@@ -102,12 +103,17 @@ void MessagerPostImage(void* p, const std::filesystem::path::value_type* path)
 {
     Messager* const messager = static_cast<Messager*>(p);
     std::basic_string<std::filesystem::path::value_type> path_str(path);
-    if (messager->is_uid_) {
-        auto img = g_mirai_bot->UploadFriendImage(std::string(path_str.begin(), path_str.end()));
-        messager->msg_.Image(img);
-    } else {
-        auto img = g_mirai_bot->UploadGroupImage(std::string(path_str.begin(), path_str.end()));
-        messager->msg_.Image(img);
+    try {
+        if (messager->is_uid_) {
+            auto img = g_mirai_bot->UploadFriendImage(std::string(path_str.begin(), path_str.end()));
+            messager->msg_.Image(img);
+        } else {
+            auto img = g_mirai_bot->UploadGroupImage(std::string(path_str.begin(), path_str.end()));
+            messager->msg_.Image(img);
+        }
+    } catch (std::exception& e) {
+        std::cerr << "Upload image failed: is_uid=" << std::boolalpha << messager->is_uid_ << std::noboolalpha
+                  << " id=" << messager->id_ << " info=" << e.what() << std::endl;
     }
 }
 
@@ -115,7 +121,9 @@ void MessagerFlush(void* p)
 {
     Messager* const messager = static_cast<Messager*>(p);
     try {
-        if (messager->is_uid_) {
+        if (messager->is_uid_ && (FLAGS_allow_temp ||
+                    std::ranges::any_of(g_mirai_bot->GetFriendList(),
+                        [id = messager->id_](const auto& f) { return f.QQ.ToInt64() == id; }))) {
             g_mirai_bot->SendMessage(Cyan::QQ_t(messager->id_), messager->msg_);
         } else {
             g_mirai_bot->SendMessage(Cyan::GID_t(messager->id_), messager->msg_);
@@ -159,12 +167,13 @@ int main(int argc, char** argv)
 #endif
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     const auto admins = LoadAdmins();
+    const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
     const BotOption option {
         .this_uid_ = FLAGS_qq,
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = admins.data(),
-        .db_path_ = std::filesystem::path(FLAGS_db_path).c_str(),
+        .db_path_ = db_path.c_str(),
     };
     const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
     if (!bot_core) {
@@ -218,16 +227,18 @@ int main(int argc, char** argv)
     bot.On<Cyan::FriendMessage>(handle_private_message);
     bot.On<Cyan::StrangerMessage>(handle_private_message);
 
-    bot.On<Cyan::TempMessage>([&bot_core](Cyan::TempMessage m)
-        {
-            try {
-                auto msg = Cyan::MessageChain();
-                msg.Plain("[错误] 请先添加我为好友吧，这样我们就能一起玩耍啦~");
-                m.Reply(msg);
-            } catch (const std::exception& ex) {
-                std::cout << ex.what() << std::endl;
-            }
-        });
+    if (FLAGS_allow_temp) {
+        bot.On<Cyan::TempMessage>([&bot_core](Cyan::TempMessage m)
+            {
+                try {
+                    auto msg = Cyan::MessageChain();
+                    msg.Plain("[错误] 请先添加我为好友吧，这样我们就能一起玩耍啦~");
+                    m.Reply(msg);
+                } catch (const std::exception& ex) {
+                    std::cout << ex.what() << std::endl;
+                }
+            });
+    }
 
     bot.OnEventReceived<Cyan::NewFriendRequestEvent>([&](Cyan::NewFriendRequestEvent newFriend)
         {
