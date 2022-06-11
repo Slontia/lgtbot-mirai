@@ -1,6 +1,6 @@
 <div align="center">
 
-![Logo](https://github.com/Slontia/lgtbot/blob/master/logo.svg)
+![Logo](https://github.com/Slontia/lgtbot/blob/master/images/gradient_logo_text.svg)
 
 ![image](https://img.shields.io/badge/author-slontia-blue.svg) ![image](https://img.shields.io/badge/language-c++20-green.svg)
 
