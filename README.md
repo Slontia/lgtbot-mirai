@@ -8,9 +8,6 @@
 
 ## 1 项目简介
 
-LGTBot：https://github.com/Slontia/lgtbot
-lgtbot-mirai：https://github.com/Slontia/lgtbot-mirai
-
 [LGTBot](https://github.com/Slontia/lgtbot) 是一个基于 C++ 实现的，用于在 **聊天室** 或 **其它通讯软件** 中，实现多人 **文字推理游戏** 的裁判机器人库。
 
 - 提供了通用的 **聊天信息交互接口**，需要由已实现好的机器人框架调用使用
@@ -24,7 +21,7 @@ lgtbot-mirai：https://github.com/Slontia/lgtbot-mirai
 
 而 [lgtbot-mirai](https://github.com/Slontia/lgtbot-mirai) 基于 [mirai-cpp](https://github.com/cyanray/mirai-cpp) 框架，将 LGTBot 库适配到了 Mirai，通过 [mirai-api-http](https://github.com/project-mirai/mirai-api-http) 实现与机器人的交互。
 
-欢迎入群体验（QQ 群）：1059834024、541402580
+**欢迎入群体验（QQ 群）：1059834024、541402580**
 
 ## 2 我要通过 Docker 直接启动 lgtbot-mirai
 
