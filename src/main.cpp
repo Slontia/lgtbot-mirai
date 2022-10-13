@@ -26,9 +26,9 @@ struct Messager
     Cyan::MessageChain msg_;
 };
 
-void* OpenMessager(const uint64_t id, const bool is_uid)
+void* OpenMessager(const char* const id_str, const bool is_uid)
 {
-    return new Messager(id, is_uid);
+    return new Messager(atoll(id_str), is_uid);
 }
 
 void MessagerPostText(void* p, const char* data, uint64_t len)
@@ -68,19 +68,22 @@ std::string member_name_str(const uint64_t uid, const uint64_t gid)
     return user_name_str(uid);
 };
 
-const char* GetUserName(const uint64_t uid, const uint64_t* const group_id)
+const char* GetUserName(const char* const uid_str, const char* const gid_str)
 {
     thread_local static std::string str;
-    if (group_id != nullptr) {
-        str = member_name_str(uid, *group_id);
+    const uint64_t uid = atoll(uid_str);
+    if (gid_str != nullptr) {
+        const uint64_t gid = atoll(gid_str);
+        str = member_name_str(uid, gid);
     } else {
         str = user_name_str(uid);
     }
     return str.c_str();
 }
 
-void MessagerPostUser(void* p, uint64_t uid, bool is_at)
+void MessagerPostUser(void* const p, const char* const uid_str, const bool is_at)
 {
+    const uint64_t uid = atoll(uid_str);
     Messager* const messager = static_cast<Messager*>(p);
     if (is_at) {
         if (!messager->is_uid_) {
@@ -141,21 +144,25 @@ void CloseMessager(void* p)
     delete messager;
 }
 
-static const std::vector<uint64_t> LoadAdmins()
+static const std::vector<std::string> LoadAdmins()
 {
     if (FLAGS_admins.empty()) {
         return {};
     }
-    std::vector<uint64_t> admins;
+    std::vector<std::string> admins;
     std::string::size_type begin = 0;
     while (true) {
-        admins.emplace_back(atoll(FLAGS_admins.c_str() + begin));
-        begin = FLAGS_admins.find_first_of(',', begin);
-        if (begin == std::string::npos || ++begin == FLAGS_admins.size()) {
+        if (begin == FLAGS_admins.size()) {
             break;
         }
+        const auto end = FLAGS_admins.find_first_of(',', begin);
+        if (end == std::string::npos) {
+            admins.emplace_back(FLAGS_admins.substr(begin));
+            break;
+        }
+        admins.emplace_back(FLAGS_admins.substr(begin, end - begin));
+        begin = end + 1;
     }
-    admins.emplace_back(0);
     return admins;
 }
 
@@ -167,12 +174,18 @@ int main(int argc, char** argv)
 #endif
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     const auto admins = LoadAdmins();
+    std::vector<const char*> c_admins;
+    for (const auto& admin : admins) {
+        c_admins.emplace_back(admin.c_str());
+    }
+    c_admins.emplace_back(nullptr);
     const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
+    const std::string qq_str = std::to_string(FLAGS_qq);
     const BotOption option {
-        .this_uid_ = FLAGS_qq,
+        .this_uid_ = qq_str.c_str(),
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
-        .admins_ = admins.data(),
+        .admins_ = c_admins.data(),
         .db_path_ = db_path.c_str(),
     };
     const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
@@ -207,7 +220,9 @@ int main(int argc, char** argv)
         {
             try {
                 if (m.AtMe()) {
-                    BOT_API::HandlePublicRequest(bot_core.get(), m.Sender.Group.GID.ToInt64(), m.Sender.QQ.ToInt64(),
+                    const auto uid = std::to_string(m.Sender.QQ.ToInt64());
+                    const auto gid = std::to_string(m.Sender.Group.GID.ToInt64());
+                    BOT_API::HandlePublicRequest(bot_core.get(), gid.c_str(), uid.c_str(),
                             m.MessageChain.GetPlainText().c_str());
                 }
             } catch (const std::exception& ex) {
@@ -218,7 +233,8 @@ int main(int argc, char** argv)
     const auto handle_private_message = [&bot_core](auto m)
         {
             try {
-                BOT_API::HandlePrivateRequest(bot_core.get(), m.Sender.QQ.ToInt64(), m.MessageChain.GetPlainText().c_str());
+                const auto uid = std::to_string(m.Sender.QQ.ToInt64());
+                BOT_API::HandlePrivateRequest(bot_core.get(), uid.c_str(), m.MessageChain.GetPlainText().c_str());
             } catch (const std::exception& ex) {
                 std::cout << ex.what() << std::endl;
             }
