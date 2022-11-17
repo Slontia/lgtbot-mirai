@@ -4,6 +4,7 @@
 #include <gflags/gflags.h>
 #include "myheader.h"
 #include "bot_core/bot_core.h"
+#include <curl/curl.h>
 
 DEFINE_string(ip, "127.0.0.1", "The IP address");
 DEFINE_int32(port, 8080, "The port");
@@ -15,6 +16,7 @@ DEFINE_string(image_path, "images", "The path of images cache");
 DEFINE_string(admins, "", "Administrator user id list");
 DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
 DEFINE_bool(allow_temp, true, "Allow temp message");
+DEFINE_bool(allow_private, true, "Allow private message");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
@@ -81,6 +83,27 @@ const char* GetUserName(const char* const uid_str, const char* const gid_str)
     return str.c_str();
 }
 
+bool DownloadUserAvatar(const char* const uid_str, const char* const dest_filename)
+{
+    const std::string url = std::string("http://q1.qlogo.cn/g?b=qq&nk=") + uid_str + "&s=640"; // the url to download avatars
+    CURL* const curl = curl_easy_init();
+    if (!curl) {
+        std::cerr << "DownloadUserAvatar curl_easy_init() failed" << std::endl;
+        return false;
+    }
+    FILE* const fp = fopen(dest_filename, "wb");
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    const CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        std::cerr << "DownloadUserAvatar curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+    }
+    curl_easy_cleanup(curl);
+    fclose(fp);
+    return res == CURLE_OK;
+}
+
 void MessagerPostUser(void* const p, const char* const uid_str, const bool is_at)
 {
     const uint64_t uid = atoll(uid_str);
@@ -124,12 +147,11 @@ void MessagerFlush(void* p)
 {
     Messager* const messager = static_cast<Messager*>(p);
     try {
-        if (messager->is_uid_ && (FLAGS_allow_temp ||
-                    std::ranges::any_of(g_mirai_bot->GetFriendList(),
-                        [id = messager->id_](const auto& f) { return f.QQ.ToInt64() == id; }))) {
-            g_mirai_bot->SendMessage(Cyan::QQ_t(messager->id_), messager->msg_);
-        } else {
+        if (!messager->is_uid_) {
             g_mirai_bot->SendMessage(Cyan::GID_t(messager->id_), messager->msg_);
+        } else if (FLAGS_allow_private && (FLAGS_allow_temp || std::ranges::any_of(g_mirai_bot->GetFriendList(),
+                    [id = messager->id_](const auto& f) { return f.QQ.ToInt64() == id; }))) {
+            g_mirai_bot->SendMessage(Cyan::QQ_t(messager->id_), messager->msg_);
         }
     } catch (std::exception& e) {
         std::cerr << "Sending message failed: is_uid=" << std::boolalpha << messager->is_uid_ << std::noboolalpha
@@ -144,48 +166,20 @@ void CloseMessager(void* p)
     delete messager;
 }
 
-static const std::vector<std::string> LoadAdmins()
-{
-    if (FLAGS_admins.empty()) {
-        return {};
-    }
-    std::vector<std::string> admins;
-    std::string::size_type begin = 0;
-    while (true) {
-        if (begin == FLAGS_admins.size()) {
-            break;
-        }
-        const auto end = FLAGS_admins.find_first_of(',', begin);
-        if (end == std::string::npos) {
-            admins.emplace_back(FLAGS_admins.substr(begin));
-            break;
-        }
-        admins.emplace_back(FLAGS_admins.substr(begin, end - begin));
-        begin = end + 1;
-    }
-    return admins;
-}
-
 int main(int argc, char** argv)
 {
 #if defined(WIN32) || defined(_WIN32)
     // make Windows console show UTF-8 characters
-	system("chcp 65001");
+    system("chcp 65001");
 #endif
     gflags::ParseCommandLineFlags(&argc, &argv, true);
-    const auto admins = LoadAdmins();
-    std::vector<const char*> c_admins;
-    for (const auto& admin : admins) {
-        c_admins.emplace_back(admin.c_str());
-    }
-    c_admins.emplace_back(nullptr);
     const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
     const std::string qq_str = std::to_string(FLAGS_qq);
     const BotOption option {
         .this_uid_ = qq_str.c_str(),
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
-        .admins_ = c_admins.data(),
+        .admins_ = FLAGS_admins.c_str(),
         .db_path_ = db_path.c_str(),
     };
     const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
@@ -265,12 +259,12 @@ int main(int argc, char** argv)
             }
         });
 
-	for (std::string command; std::cin >> command; ) {
-		if (command == "exit") {
-			bot.Disconnect();
-			break;
-		}
-	}
+    for (std::string command; std::cin >> command; ) {
+        if (command == "exit") {
+            bot.Disconnect();
+            break;
+        }
+    }
 
     return 0;
 }

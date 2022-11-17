@@ -38,7 +38,7 @@
 
 ``` bash
 # 安装依赖库（Ubuntu 系统）
-sudo apt-get install -y libgoogle-glog-dev libgflags-dev libgtest-dev libsqlite3-dev libqt5webkit5-dev
+sudo apt-get install -y libgoogle-glog-dev libgflags-dev libgtest-dev libsqlite3-dev libqt5webkit5-dev libcurl-dev
 
 # 完整克隆本项目
 git clone github.com/slontia/lgtbot-mirai

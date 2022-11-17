@@ -17,12 +17,13 @@ if(MSVC)
 endif(MSVC)
 
 find_package(gflags REQUIRED)
+find_package(CURL REQUIRED)
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 
 include_directories(include ${CMAKE_CURRENT_SOURCE_DIR}/lgtbot)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE mirai-cpp gflags bot_core)
+target_link_libraries(${PROJECT_NAME} PRIVATE mirai-cpp gflags bot_core ${CURL_LIBRARIES})
 add_dependencies(${PROJECT_NAME} mirai-cpp bot_core_static)
 target_compile_definitions(${PROJECT_NAME} PRIVATE MIRAICPP_STATICLIB)
 
