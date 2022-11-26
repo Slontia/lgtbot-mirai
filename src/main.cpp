@@ -5,6 +5,8 @@
 #include "myheader.h"
 #include "bot_core/bot_core.h"
 #include <curl/curl.h>
+#include <csignal>
+#include <condition_variable>
 
 #if defined(LINUX) || defined(__linux__)
 #include <unistd.h>
@@ -25,6 +27,7 @@ DEFINE_bool(allow_private, true, "Allow private message");
 DEFINE_bool(guard, false, "Create a guard process to keep alive");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
+static void* g_lgt_bot = nullptr;
 
 struct Messager
 {
@@ -220,8 +223,7 @@ int main(int argc, char** argv)
         .admins_ = FLAGS_admins.c_str(),
         .db_path_ = db_path.c_str(),
     };
-    const std::unique_ptr<void, void(*)(void*)> bot_core(BOT_API::Init(&option), BOT_API::Release);
-    if (!bot_core) {
+    if (!(g_lgt_bot = BOT_API::Init(&option))) {
         std::cerr << "Init bot core failed" << std::endl;
         return -1;
     }
@@ -246,15 +248,14 @@ int main(int argc, char** argv)
         }
         Cyan::MiraiBot::SleepSeconds(1);
     }
-    std::cout << "Bot Working..." << std::endl;
 
-    bot.On<Cyan::GroupMessage>([&bot_core](Cyan::GroupMessage m)
+    bot.On<Cyan::GroupMessage>([](Cyan::GroupMessage m)
         {
             try {
                 if (m.AtMe()) {
                     const auto uid = std::to_string(m.Sender.QQ.ToInt64());
                     const auto gid = std::to_string(m.Sender.Group.GID.ToInt64());
-                    BOT_API::HandlePublicRequest(bot_core.get(), gid.c_str(), uid.c_str(),
+                    BOT_API::HandlePublicRequest(g_lgt_bot, gid.c_str(), uid.c_str(),
                             m.MessageChain.GetPlainText().c_str());
                 }
             } catch (const std::exception& ex) {
@@ -262,11 +263,11 @@ int main(int argc, char** argv)
             }
         });
 
-    const auto handle_private_message = [&bot_core](auto m)
+    const auto handle_private_message = [](auto m)
         {
             try {
                 const auto uid = std::to_string(m.Sender.QQ.ToInt64());
-                BOT_API::HandlePrivateRequest(bot_core.get(), uid.c_str(), m.MessageChain.GetPlainText().c_str());
+                BOT_API::HandlePrivateRequest(g_lgt_bot, uid.c_str(), m.MessageChain.GetPlainText().c_str());
             } catch (const std::exception& ex) {
                 std::cout << ex.what() << std::endl;
             }
@@ -276,7 +277,7 @@ int main(int argc, char** argv)
     bot.On<Cyan::StrangerMessage>(handle_private_message);
 
     if (FLAGS_allow_temp) {
-        bot.On<Cyan::TempMessage>([&bot_core](Cyan::TempMessage m)
+        bot.On<Cyan::TempMessage>([](Cyan::TempMessage m)
             {
                 try {
                     auto msg = Cyan::MessageChain();
@@ -297,12 +298,14 @@ int main(int argc, char** argv)
             }
         });
 
-    for (std::string command; std::cin >> command; ) {
-        if (command == "exit") {
-            bot.Disconnect();
-            break;
-        }
+    std::cout << "Bot Working... Press <Enter> to shutdown." << std::endl;
+
+    while (std::getchar() && !BOT_API::ReleaseIfNoProcessingGames(g_lgt_bot)) {
+        std::cout << "There are processing games, please retry later or force exit by kill -9." << std::endl;
     }
+
+    bot.Disconnect();
+    std::cout << "Bye." << std::endl;
 
     return 0;
 }
