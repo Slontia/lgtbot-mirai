@@ -25,6 +25,7 @@ DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
 DEFINE_bool(allow_temp, true, "Allow temp message");
 DEFINE_bool(allow_private, true, "Allow private message");
 DEFINE_bool(guard, false, "Create a guard process to keep alive");
+DEFINE_string(conf_file, "", "The path of configuration file contains initial instructions");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 static void* g_lgt_bot = nullptr;
@@ -92,7 +93,7 @@ const char* GetUserName(const char* const uid_str, const char* const gid_str)
     return str.c_str();
 }
 
-bool DownloadUserAvatar(const char* const uid_str, const char* const dest_filename)
+bool DownloadUserAvatar(const char* const uid_str, const std::filesystem::path::value_type* const dest_filename)
 {
     const std::string url = std::string("http://q1.qlogo.cn/g?b=qq&nk=") + uid_str + "&s=640"; // the url to download avatars
     CURL* const curl = curl_easy_init();
@@ -100,7 +101,11 @@ bool DownloadUserAvatar(const char* const uid_str, const char* const dest_filena
         std::cerr << "DownloadUserAvatar curl_easy_init() failed" << std::endl;
         return false;
     }
+#ifdef _WIN32
+    FILE* const fp = _wfopen(dest_filename, "wb");
+#else
     FILE* const fp = fopen(dest_filename, "wb");
+#endif
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
@@ -222,6 +227,7 @@ int main(int argc, char** argv)
         .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = FLAGS_admins.c_str(),
         .db_path_ = db_path.c_str(),
+        .conf_path_ = FLAGS_conf_file.empty() ? nullptr : FLAGS_conf_file.c_str(),
     };
     if (!(g_lgt_bot = BOT_API::Init(&option))) {
         std::cerr << "Init bot core failed" << std::endl;
