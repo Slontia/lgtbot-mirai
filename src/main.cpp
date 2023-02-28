@@ -6,6 +6,11 @@
 #include "bot_core/bot_core.h"
 #include <curl/curl.h>
 
+#if defined(LINUX) || defined(__linux__)
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
 DEFINE_string(ip, "127.0.0.1", "The IP address");
 DEFINE_int32(port, 8080, "The port");
 DEFINE_string(auth, "", "The AuthKey for mirai-api-http");
@@ -17,6 +22,7 @@ DEFINE_string(admins, "", "Administrator user id list");
 DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
 DEFINE_bool(allow_temp, true, "Allow temp message");
 DEFINE_bool(allow_private, true, "Allow private message");
+DEFINE_bool(guard, false, "Create a guard process to keep alive");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 
@@ -173,6 +179,38 @@ int main(int argc, char** argv)
     system("chcp 65001");
 #endif
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+#if defined(LINUX)|| defined(__linux__)
+    if(FLAGS_guard) {
+        while (true) {
+            std::cout << "Creating guard process..." << std::endl;
+            pid_t pid = fork();
+            if (pid == -1) {
+                std::cerr << "Failed to fork process" << std::endl;
+                exit(1);
+            } else if (pid == 0) {
+                // Child process - execute the bot logic
+                break;
+            } else {
+                // Parent process - wait for the child process to terminate
+                int status;
+                waitpid(pid, &status, 0);
+                if (WIFEXITED(status)) {
+                    std::cout << "Bot exited with status " << WEXITSTATUS(status) << std::endl;
+                    exit(0);
+                } else {
+                    std::cerr << "Bot terminated unexpectedly, restarting in 3 seconds" << std::endl;
+                    sleep(3);
+                }
+            }
+        }
+    }
+#else
+    if(FLAGS_guard) {
+        std::cerr << "Guard mode is not supported on this platform, skipping." << std::endl;
+    }
+#endif
+
     const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
     const std::string qq_str = std::to_string(FLAGS_qq);
     const BotOption option {
