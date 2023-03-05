@@ -26,6 +26,7 @@ DEFINE_bool(allow_temp, true, "Allow temp message");
 DEFINE_bool(allow_private, true, "Allow private message");
 DEFINE_bool(guard, false, "Create a guard process to keep alive");
 DEFINE_string(conf_file, "", "The path of configuration file contains initial instructions");
+DEFINE_bool(auto_accept_friend, true, "Accept friend request automatically");
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 static void* g_lgt_bot = nullptr;
@@ -295,14 +296,16 @@ int main(int argc, char** argv)
             });
     }
 
-    bot.OnEventReceived<Cyan::NewFriendRequestEvent>([&](Cyan::NewFriendRequestEvent newFriend)
-        {
-            try {
-                newFriend.Accept();
-            } catch (const std::exception& ex) {
-                std::cout << ex.what() << std::endl;
-            }
-        });
+    if (FLAGS_auto_accept_friend) {
+        bot.OnEventReceived<Cyan::NewFriendRequestEvent>([&](Cyan::NewFriendRequestEvent newFriend)
+            {
+                try {
+                    newFriend.Accept();
+                } catch (const std::exception& ex) {
+                    std::cout << ex.what() << std::endl;
+                }
+            });
+    }
 
     std::cout << "Bot Working... Press <Enter> to shutdown." << std::endl;
 
