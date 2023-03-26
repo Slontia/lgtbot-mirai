@@ -1,6 +1,6 @@
 <div align="center">
 
-![Logo](https://github.com/Slontia/lgtbot/blob/master/images/gradient_logo_text.svg)
+![Logo](https://github.com/Slontia/lgtbot/blob/master/images/logo_transparent_colorful.svg)
 
 ![image](https://img.shields.io/badge/author-slontia-blue.svg) ![image](https://img.shields.io/badge/language-c++20-green.svg)
 
@@ -10,14 +10,7 @@
 
 *「LGT」源自日本漫画家甲斐谷忍创作的《Liar Game》中的虚构组织「**L**iar **G**ame **T**ournament 事务所」。*
 
-[LGTBot](https://github.com/Slontia/lgtbot) 是一个基于 C++ 实现的，用于在 **聊天室** 或 **其它通讯软件** 中，实现多人 **文字推理游戏** 的裁判机器人库。
-
-- 提供了通用的 **聊天信息交互接口**，需要由已实现好的机器人框架调用使用
-- 支持 **群组公开游戏** 和 **私密游戏** 两种方式，无需在群组内也可以进行游戏
-- 内置了 11 种已实现好的游戏，同时提供了通用的**游戏框架**，便于后续开发新游戏
-- 基于 CMake 编译，支持跨平台
-
-而 [lgtbot-mirai](https://github.com/Slontia/lgtbot-mirai) 基于 [mirai-cpp](https://github.com/cyanray/mirai-cpp) 框架，将 LGTBot 库适配到了 Mirai，通过 [mirai-api-http](https://github.com/project-mirai/mirai-api-http) 实现与机器人的交互。
+[LGTBot](https://github.com/Slontia/lgtbot) 是一个基于 C++ 实现的，用于在 **聊天室** 或 **其它通讯软件** 中，实现多人 **文字推理游戏** 的裁判机器人库。而 [lgtbot-mirai](https://github.com/Slontia/lgtbot-mirai) 基于 [mirai-cpp](https://github.com/cyanray/mirai-cpp) 框架，将 LGTBot 库适配到了 Mirai，通过 [mirai-api-http](https://github.com/project-mirai/mirai-api-http) 实现与机器人的交互。
 
 **欢迎入群体验（QQ 群）：1059834024、541402580**
 
