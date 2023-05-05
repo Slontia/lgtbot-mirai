@@ -20,13 +20,16 @@ DEFINE_int32(thread, 4, "The number of threads");
 DEFINE_uint64(qq, 0, "Bot's QQ ID");
 DEFINE_string(game_path, "plugins", "The path of game modules");
 DEFINE_string(image_path, "images", "The path of images cache");
-DEFINE_string(admins, "", "Administrator user id list");
-DEFINE_string(db_path, "./lgtbot_data.db", "Path of database");
+DEFINE_string(admins, "", "The administrator user id list");
+DEFINE_string(db_path, "./lgtbot_data.db", "The path of sqlite database file");
 DEFINE_bool(allow_temp, true, "Allow temp message");
 DEFINE_bool(allow_private, true, "Allow private message");
-DEFINE_bool(guard, false, "Create a guard process to keep alive");
-DEFINE_string(conf_file, "", "The path of configuration file contains initial instructions");
+DEFINE_string(conf_path, "./lgtbot_config.json", "The path of configuration file");
 DEFINE_bool(auto_accept_friend, true, "Accept friend request automatically");
+
+#if defined(LINUX)|| defined(__linux__)
+DEFINE_bool(guard, false, "Create a guard process to keep alive");
+#endif
 
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 static void* g_lgt_bot = nullptr;
@@ -181,54 +184,58 @@ void CloseMessager(void* p)
     delete messager;
 }
 
+void GuardProcessIfNeed()
+{
+#if defined(LINUX)|| defined(__linux__)
+    if(!FLAGS_guard) {
+        return;
+    }
+    while (true) {
+        std::cout << "[Guard] Creating guard process..." << std::endl;
+        const pid_t pid = fork();
+        if (pid == -1) {
+            std::cerr << "[Guard] Failed to fork process" << std::endl;
+            exit(1);
+        } else if (pid == 0) {
+            // Child process - execute the bot logic
+            break;
+        } else {
+            // Parent process - wait for the child process to terminate
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status)) {
+                std::cout << "[Guard] Bot exited with status " << WEXITSTATUS(status) << std::endl;
+                exit(0);
+            } else {
+                std::cerr << "[Guard] Bot terminated unexpectedly, restarting in 3 seconds" << std::endl;
+                sleep(3);
+            }
+        }
+    }
+#endif
+}
+
 int main(int argc, char** argv)
 {
 #if defined(WIN32) || defined(_WIN32)
     // make Windows console show UTF-8 characters
     system("chcp 65001");
 #endif
+
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-#if defined(LINUX)|| defined(__linux__)
-    if(FLAGS_guard) {
-        while (true) {
-            std::cout << "Creating guard process..." << std::endl;
-            pid_t pid = fork();
-            if (pid == -1) {
-                std::cerr << "Failed to fork process" << std::endl;
-                exit(1);
-            } else if (pid == 0) {
-                // Child process - execute the bot logic
-                break;
-            } else {
-                // Parent process - wait for the child process to terminate
-                int status;
-                waitpid(pid, &status, 0);
-                if (WIFEXITED(status)) {
-                    std::cout << "Bot exited with status " << WEXITSTATUS(status) << std::endl;
-                    exit(0);
-                } else {
-                    std::cerr << "Bot terminated unexpectedly, restarting in 3 seconds" << std::endl;
-                    sleep(3);
-                }
-            }
-        }
-    }
-#else
-    if(FLAGS_guard) {
-        std::cerr << "Guard mode is not supported on this platform, skipping." << std::endl;
-    }
-#endif
+    GuardProcessIfNeed();
 
     const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
+    const std::filesystem::path conf_path = std::filesystem::path(FLAGS_conf_path);
     const std::string qq_str = std::to_string(FLAGS_qq);
     const BotOption option {
         .this_uid_ = qq_str.c_str(),
         .game_path_ = FLAGS_game_path.c_str(),
         .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = FLAGS_admins.c_str(),
-        .db_path_ = db_path.c_str(),
-        .conf_path_ = FLAGS_conf_file.empty() ? nullptr : FLAGS_conf_file.c_str(),
+        .db_path_ = db_path.empty() ? nullptr : db_path.c_str(),
+        .conf_path_ = conf_path.empty() ? nullptr : conf_path.c_str(),
     };
     if (!(g_lgt_bot = BOT_API::Init(&option))) {
         std::cerr << "Init bot core failed" << std::endl;
