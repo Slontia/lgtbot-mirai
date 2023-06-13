@@ -34,70 +34,72 @@ DEFINE_bool(guard, false, "Create a guard process to keep alive");
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 static void* g_lgt_bot = nullptr;
 
-struct Messager
+void HandleMessages(void* handler, const char* const id, const int is_uid, const LGTBot_Message* messages, const size_t size)
 {
-    Messager(const uint64_t id, const bool is_uid) : id_(id), is_uid_(is_uid) {}
-    const uint64_t id_;
-    const bool is_uid_;
-    Cyan::MessageChain msg_;
-};
-
-void* OpenMessager(const char* const id_str, const bool is_uid)
-{
-    return new Messager(atoll(id_str), is_uid);
+    Cyan::MessageChain msg_chain;
+    for (size_t i = 0; i < size; ++i) {
+        const auto& msg = messages[i];
+        switch (msg.type_) {
+        case LGTBOT_MSG_TEXT:
+            msg_chain.Plain(msg.str_);
+            break;
+        case LGTBOT_MSG_USER_MENTION:
+            msg_chain.At(Cyan::QQ_t(atoll(msg.str_)));
+            break;
+        case LGTBOT_MSG_IMAGE:
+            try {
+                msg_chain.Image(is_uid ? g_mirai_bot->UploadFriendImage(msg.str_) : g_mirai_bot->UploadGroupImage(msg.str_));
+            } catch (std::exception& e) {
+                std::cerr << "Upload image failed: is_uid=" << std::boolalpha << is_uid << std::noboolalpha
+                        << " id=" << id << " info=" << e.what() << std::endl;
+            }
+            break;
+        default:
+            assert(false);
+        }
+    }
+    try {
+        const auto id_int = atoll(id);
+        if (!is_uid) {
+            g_mirai_bot->SendMessage(Cyan::GID_t(id_int), msg_chain);
+        } else if (FLAGS_allow_private && (FLAGS_allow_temp || std::ranges::any_of(g_mirai_bot->GetFriendList(),
+                    [id_int](const auto& f) { return f.QQ.ToInt64() == id_int; }))) {
+            g_mirai_bot->SendMessage(Cyan::QQ_t(id_int), msg_chain);
+        }
+    } catch (std::exception& e) {
+        std::cerr << "Sending message failed: is_uid=" << std::boolalpha << is_uid << std::noboolalpha
+                  << " id=" << id << " info=" << e.what() << std::endl;
+    }
 }
 
-void MessagerPostText(void* p, const char* data, uint64_t len)
-{
-    Messager* const messager = static_cast<Messager*>(p);
-    messager->msg_.Plain(std::string_view(data, len));
-}
-
-std::string user_id_str(const uint64_t uid)
-{
-    return "<" + std::to_string(uid) + ">";
-};
-
-std::string user_name_str(const uint64_t uid)
+void GetUserName(void* handler, char* const buffer, const size_t size, const char* const uid_str)
 {
     try {
+        const auto uid = atoll(uid_str);
         for (const auto& f : g_mirai_bot->GetFriendList()) {
             if (uid == f.QQ.ToInt64()) {
-                return "<" + f.NickName + "(" + std::to_string(uid) + ")>";
+                snprintf(buffer, size, "<%s(%s)>", f.NickName.c_str(), uid_str);
             }
         }
         // If the user is not friend, we will not find his name.
     } catch (std::exception& e) {
-        std::cerr << "UserName failed: uid=" << uid << " info=" << e.what() << std::endl;
+        std::cerr << "UserName failed: uid=" << uid_str << " info=" << e.what() << std::endl;
     }
-    return user_id_str(uid);
-};
-
-std::string member_name_str(const uint64_t uid, const uint64_t gid)
-{
-    try {
-        return "<" + g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(gid), Cyan::QQ_t(uid)).MemberName
-                   + "(" + std::to_string(uid) + ")>";
-    } catch (std::exception& e) {
-        std::cerr << "GroupUserName failed: uid=" << uid << " gid=" << gid << " info=" << e.what() << std::endl;
-    }
-    return user_name_str(uid);
-};
-
-const char* GetUserName(const char* const uid_str, const char* const gid_str)
-{
-    thread_local static std::string str;
-    const uint64_t uid = atoll(uid_str);
-    if (gid_str != nullptr) {
-        const uint64_t gid = atoll(gid_str);
-        str = member_name_str(uid, gid);
-    } else {
-        str = user_name_str(uid);
-    }
-    return str.c_str();
+    snprintf(buffer, size, "<%s>", uid_str);
 }
 
-bool DownloadUserAvatar(const char* const uid_str, const std::filesystem::path::value_type* const dest_filename)
+void GetUserNameInGroup(void* handler, char* const buffer, const size_t size, const char* const gid_str, const char* const uid_str)
+{
+    try {
+        const auto& member_info = g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(atoll(gid_str)), Cyan::QQ_t(atoll(uid_str)));
+        snprintf(buffer, size, "<%s(%s)>", member_info.MemberName.c_str() , uid_str);
+    } catch (std::exception& e) {
+        std::cerr << "GroupUserName failed: uid=" << uid_str << " gid=" << gid_str << " info=" << e.what() << std::endl;
+        GetUserName(handler, buffer, size, uid_str);
+    }
+}
+
+int DownloadUserAvatar(void* handler, const char* const uid_str, const char* const dest_filename)
 {
     const std::string url = std::string("http://q1.qlogo.cn/g?b=qq&nk=") + uid_str + "&s=640"; // the url to download avatars
     CURL* const curl = curl_easy_init();
@@ -105,11 +107,11 @@ bool DownloadUserAvatar(const char* const uid_str, const std::filesystem::path::
         std::cerr << "DownloadUserAvatar curl_easy_init() failed" << std::endl;
         return false;
     }
-#ifdef _WIN32
-    FILE* const fp = _wfopen(dest_filename, "wb");
-#else
     FILE* const fp = fopen(dest_filename, "wb");
-#endif
+    if (!fp) {
+        std::cerr << "DownloadUserAvatar open dest file failed, path: " << dest_filename << std::endl;
+        return false;
+    }
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
@@ -120,68 +122,6 @@ bool DownloadUserAvatar(const char* const uid_str, const std::filesystem::path::
     curl_easy_cleanup(curl);
     fclose(fp);
     return res == CURLE_OK;
-}
-
-void MessagerPostUser(void* const p, const char* const uid_str, const bool is_at)
-{
-    const uint64_t uid = atoll(uid_str);
-    Messager* const messager = static_cast<Messager*>(p);
-    if (is_at) {
-        if (!messager->is_uid_) {
-            messager->msg_.At(Cyan::QQ_t(uid));
-        } else if (uid == messager->id_) {
-            messager->msg_.Plain("<你>");
-        } else {
-            messager->msg_.Plain(user_name_str(uid));
-        }
-    } else {
-        if (!messager->is_uid_) {
-            messager->msg_.Plain(member_name_str(uid, messager->id_));
-        } else {
-            messager->msg_.Plain(user_name_str(uid));
-        }
-    }
-}
-
-void MessagerPostImage(void* p, const std::filesystem::path::value_type* path)
-{
-    Messager* const messager = static_cast<Messager*>(p);
-    std::basic_string<std::filesystem::path::value_type> path_str(path);
-    try {
-        if (messager->is_uid_) {
-            auto img = g_mirai_bot->UploadFriendImage(std::string(path_str.begin(), path_str.end()));
-            messager->msg_.Image(img);
-        } else {
-            auto img = g_mirai_bot->UploadGroupImage(std::string(path_str.begin(), path_str.end()));
-            messager->msg_.Image(img);
-        }
-    } catch (std::exception& e) {
-        std::cerr << "Upload image failed: is_uid=" << std::boolalpha << messager->is_uid_ << std::noboolalpha
-                  << " id=" << messager->id_ << " info=" << e.what() << std::endl;
-    }
-}
-
-void MessagerFlush(void* p)
-{
-    Messager* const messager = static_cast<Messager*>(p);
-    try {
-        if (!messager->is_uid_) {
-            g_mirai_bot->SendMessage(Cyan::GID_t(messager->id_), messager->msg_);
-        } else if (FLAGS_allow_private && (FLAGS_allow_temp || std::ranges::any_of(g_mirai_bot->GetFriendList(),
-                    [id = messager->id_](const auto& f) { return f.QQ.ToInt64() == id; }))) {
-            g_mirai_bot->SendMessage(Cyan::QQ_t(messager->id_), messager->msg_);
-        }
-    } catch (std::exception& e) {
-        std::cerr << "Sending message failed: is_uid=" << std::boolalpha << messager->is_uid_ << std::noboolalpha
-                  << " id=" << messager->id_ << " info=" << e.what() << std::endl;
-    }
-    messager->msg_.Clear();
-}
-
-void CloseMessager(void* p)
-{
-    Messager* const messager = static_cast<Messager*>(p);
-    delete messager;
 }
 
 void GuardProcessIfNeed()
@@ -226,19 +166,21 @@ int main(int argc, char** argv)
 
     GuardProcessIfNeed();
 
-    const std::filesystem::path db_path = std::filesystem::path(FLAGS_db_path);
-    const std::filesystem::path conf_path = std::filesystem::path(FLAGS_conf_path);
-    const std::string qq_str = std::to_string(FLAGS_qq);
-    const BotOption option {
-        .this_uid_ = qq_str.c_str(),
+    const LGTBot_Option option {
         .game_path_ = FLAGS_game_path.c_str(),
-        .image_path_ = FLAGS_image_path.c_str(),
         .admins_ = FLAGS_admins.c_str(),
-        .db_path_ = db_path.empty() ? nullptr : db_path.c_str(),
-        .conf_path_ = conf_path.empty() ? nullptr : conf_path.c_str(),
+        .db_path_ = FLAGS_db_path.empty() ? nullptr : FLAGS_db_path.c_str(),
+        .conf_path_ = FLAGS_conf_path.empty() ? nullptr : FLAGS_conf_path.c_str(),
+        .callbacks_ = LGTBot_Callback{
+            .get_user_name = GetUserName,
+            .get_user_name_in_group = GetUserNameInGroup,
+            .download_user_avatar = DownloadUserAvatar,
+            .handle_messages = HandleMessages,
+        },
     };
-    if (!(g_lgt_bot = BOT_API::Init(&option))) {
-        std::cerr << "Init bot core failed" << std::endl;
+    const char* errmsg = nullptr;
+    if (!(g_lgt_bot = LGTBot_Create(&option, &errmsg))) {
+        std::cerr << "[ERROR] Init bot core failed: " << errmsg << std::endl;
         return -1;
     }
 
@@ -269,7 +211,7 @@ int main(int argc, char** argv)
                 if (m.AtMe()) {
                     const auto uid = std::to_string(m.Sender.QQ.ToInt64());
                     const auto gid = std::to_string(m.Sender.Group.GID.ToInt64());
-                    BOT_API::HandlePublicRequest(g_lgt_bot, gid.c_str(), uid.c_str(),
+                    LGTBot_HandlePublicRequest(g_lgt_bot, gid.c_str(), uid.c_str(),
                             m.MessageChain.GetPlainText().c_str());
                 }
             } catch (const std::exception& ex) {
@@ -280,8 +222,13 @@ int main(int argc, char** argv)
     const auto handle_private_message = [](auto m)
         {
             try {
+
+                if (FLAGS_qq == m.Sender.QQ.ToInt64()) {
+                    std::cerr << "Receive message from self: " << m.MessageChain.GetPlainText().c_str() << std::endl;
+                    return;
+                }
                 const auto uid = std::to_string(m.Sender.QQ.ToInt64());
-                BOT_API::HandlePrivateRequest(g_lgt_bot, uid.c_str(), m.MessageChain.GetPlainText().c_str());
+                LGTBot_HandlePrivateRequest(g_lgt_bot, uid.c_str(), m.MessageChain.GetPlainText().c_str());
             } catch (const std::exception& ex) {
                 std::cout << ex.what() << std::endl;
             }
@@ -316,7 +263,7 @@ int main(int argc, char** argv)
 
     std::cout << "Bot Working... Press <Enter> to shutdown." << std::endl;
 
-    while (std::getchar() && !BOT_API::ReleaseIfNoProcessingGames(g_lgt_bot)) {
+    while (std::getchar() && !LGTBot_ReleaseIfNoProcessingGames(g_lgt_bot)) {
         std::cout << "There are processing games, please retry later or force exit by kill -9." << std::endl;
     }
 
