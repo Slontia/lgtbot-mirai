@@ -168,9 +168,10 @@ int main(int argc, char** argv)
 
     const LGTBot_Option option {
         .game_path_ = FLAGS_game_path.c_str(),
-        .admins_ = FLAGS_admins.c_str(),
         .db_path_ = FLAGS_db_path.empty() ? nullptr : FLAGS_db_path.c_str(),
         .conf_path_ = FLAGS_conf_path.empty() ? nullptr : FLAGS_conf_path.c_str(),
+        .image_path_ = FLAGS_image_path.empty() ? nullptr : FLAGS_image_path.c_str(),
+        .admins_ = FLAGS_admins.c_str(),
         .callbacks_ = LGTBot_Callback{
             .get_user_name = GetUserName,
             .get_user_name_in_group = GetUserNameInGroup,
