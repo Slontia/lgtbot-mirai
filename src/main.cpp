@@ -7,10 +7,13 @@
 #include <curl/curl.h>
 #include <csignal>
 #include <condition_variable>
+#include <filesystem>
 
 #if defined(LINUX) || defined(__linux__)
 #include <unistd.h>
 #include <sys/wait.h>
+#elif _WIN32
+#undef SendMessage
 #endif
 
 DEFINE_string(ip, "127.0.0.1", "The IP address");
