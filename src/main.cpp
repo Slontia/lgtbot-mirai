@@ -37,6 +37,34 @@ DEFINE_bool(guard, false, "Create a guard process to keep alive");
 static Cyan::MiraiBot* g_mirai_bot = nullptr;
 static void* g_lgt_bot = nullptr;
 
+void GetUserName(void* handler, char* const buffer, const size_t size, const char* const uid_str)
+{
+    try {
+        const auto uid = atoll(uid_str);
+        for (const auto& f : g_mirai_bot->GetFriendList()) {
+            if (uid == f.QQ.ToInt64()) {
+                snprintf(buffer, size, "<%s(%s)>", f.NickName.c_str(), uid_str);
+                return;
+            }
+        }
+        // If the user is not friend, we will not find his name.
+    } catch (std::exception& e) {
+        std::cerr << "UserName failed: uid=" << uid_str << " info=" << e.what() << std::endl;
+    }
+    snprintf(buffer, size, "<%s>", uid_str);
+}
+
+void GetUserNameInGroup(void* handler, char* const buffer, const size_t size, const char* const gid_str, const char* const uid_str)
+{
+    try {
+        const auto& member_info = g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(atoll(gid_str)), Cyan::QQ_t(atoll(uid_str)));
+        snprintf(buffer, size, "<%s(%s)>", member_info.MemberName.c_str() , uid_str);
+    } catch (std::exception& e) {
+        std::cerr << "GroupUserName failed: uid=" << uid_str << " gid=" << gid_str << " info=" << e.what() << std::endl;
+        GetUserName(handler, buffer, size, uid_str);
+    }
+}
+
 void HandleMessages(void* handler, const char* const id, const int is_uid, const LGTBot_Message* messages, const size_t size)
 {
     Cyan::MessageChain msg_chain;
@@ -47,7 +75,13 @@ void HandleMessages(void* handler, const char* const id, const int is_uid, const
             msg_chain.Plain(msg.str_);
             break;
         case LGTBOT_MSG_USER_MENTION:
-            msg_chain.At(Cyan::QQ_t(atoll(msg.str_)));
+            if (is_uid) {
+                char buffer[50] = {0};
+                GetUserName(handler, buffer, sizeof(buffer), msg.str_);
+                msg_chain.Plain(buffer);
+            } else {
+                msg_chain.At(Cyan::QQ_t(atoll(msg.str_)));
+            }
             break;
         case LGTBOT_MSG_IMAGE:
             try {
@@ -72,33 +106,6 @@ void HandleMessages(void* handler, const char* const id, const int is_uid, const
     } catch (std::exception& e) {
         std::cerr << "Sending message failed: is_uid=" << std::boolalpha << is_uid << std::noboolalpha
                   << " id=" << id << " info=" << e.what() << std::endl;
-    }
-}
-
-void GetUserName(void* handler, char* const buffer, const size_t size, const char* const uid_str)
-{
-    try {
-        const auto uid = atoll(uid_str);
-        for (const auto& f : g_mirai_bot->GetFriendList()) {
-            if (uid == f.QQ.ToInt64()) {
-                snprintf(buffer, size, "<%s(%s)>", f.NickName.c_str(), uid_str);
-            }
-        }
-        // If the user is not friend, we will not find his name.
-    } catch (std::exception& e) {
-        std::cerr << "UserName failed: uid=" << uid_str << " info=" << e.what() << std::endl;
-    }
-    snprintf(buffer, size, "<%s>", uid_str);
-}
-
-void GetUserNameInGroup(void* handler, char* const buffer, const size_t size, const char* const gid_str, const char* const uid_str)
-{
-    try {
-        const auto& member_info = g_mirai_bot->GetGroupMemberInfo(Cyan::GID_t(atoll(gid_str)), Cyan::QQ_t(atoll(uid_str)));
-        snprintf(buffer, size, "<%s(%s)>", member_info.MemberName.c_str() , uid_str);
-    } catch (std::exception& e) {
-        std::cerr << "GroupUserName failed: uid=" << uid_str << " gid=" << gid_str << " info=" << e.what() << std::endl;
-        GetUserName(handler, buffer, size, uid_str);
     }
 }
 
