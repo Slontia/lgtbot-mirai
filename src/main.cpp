@@ -4,6 +4,7 @@
 #include <gflags/gflags.h>
 #include "myheader.h"
 #include "bot_core/bot_core.h"
+#include "utility/process_signals.h"
 #include <curl/curl.h>
 #include <csignal>
 #include <condition_variable>
@@ -167,6 +168,8 @@ void GuardProcessIfNeed()
 
 int main(int argc, char** argv)
 {
+    lgtbot::InstallDefaultSignalHandlersOnce();
+
 #if defined(WIN32) || defined(_WIN32)
     // make Windows console show UTF-8 characters
     system("chcp 65001");
